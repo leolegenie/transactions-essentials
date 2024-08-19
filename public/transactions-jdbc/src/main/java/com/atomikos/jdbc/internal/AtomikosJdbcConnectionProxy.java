@@ -97,7 +97,7 @@ public class AtomikosJdbcConnectionProxy extends AbstractJdbcConnectionProxy {
 					} else if (state == TxState.MARKED_ABORT){
 						AtomikosSQLException.throwAtomikosSQLException("The transaction has been set to rollback-only");
 					} else {
-						AtomikosSQLException.throwAtomikosSQLException("The transaction has timed out - try increasing the timeout if needed");
+						AtomikosSQLException.throwAtomikosSQLException("The transaction has potentially timed out (state: " + state + ") - try increasing the timeout if needed");
 					}
 				} else {
 				    if (!localTransactionMode) {
