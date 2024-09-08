@@ -157,6 +157,22 @@ public final class ConfigProperties {
 		return ret;
 	}
 
+        /** Allow optional properties
+         * 
+         * @param name
+         * @param defaultValue
+         * @return 
+         */
+	public String getProperty(String name, String defaultValue) {
+		completeProperties();
+		String ret = properties.getProperty(name);
+		if (ret == null) {
+			ret = defaultValue;
+		}
+		ret = ret.trim();
+		return ret;
+	}
+
 	public void setProperty(String name, String value) {
 		properties.setProperty(name, value);		
 	}
