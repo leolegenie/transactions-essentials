@@ -9,6 +9,7 @@
 package com.atomikos.recovery.fs;
 
 import java.util.Collection;
+import java.util.concurrent.CountDownLatch;
 
 import com.atomikos.recovery.LogException;
 import com.atomikos.recovery.LogReadException;
@@ -19,7 +20,10 @@ public interface Repository {
 
 	void init() throws LogException;
 
-	void put(String id,PendingTransactionRecord pendingTransactionRecord) throws LogWriteException;
+        // Returns the disk-force-bundling coordination latch for the case that disk-force-bundling is enabled.
+        // The latch is necessary upstream because of the CachedRepository wrapping the FileSystemRepository and the CachedRepository
+        // doing it's own synchronization.
+	CountDownLatch put(String id,PendingTransactionRecord pendingTransactionRecord) throws LogWriteException;
 	
 	PendingTransactionRecord get(String coordinatorId) throws LogReadException;
 

@@ -11,6 +11,8 @@ package com.atomikos.recovery.fs;
 import java.util.Collection;
 import java.util.HashSet;
 import java.util.Set;
+import java.util.concurrent.CountDownLatch;
+import java.util.concurrent.TimeUnit;
 
 import com.atomikos.icatch.config.Configuration;
 import com.atomikos.icatch.provider.ConfigProperties;
@@ -33,6 +35,11 @@ public class CachedRepository  implements Repository {
 	private volatile long numberOfPutsSinceLastCheckpoint = 0;
 	private long checkpointInterval;
 	private long forgetOrphanedLogEntriesDelay;
+        
+        public static final String DISK_FORCE_BUNDLING_MAX_COORDINATION_WAIT_TIME_MS = "com.atomikos.icatch.disk_force_bunding_max_coordination_wait_time_ms";
+        // zero means wait as long as it takes
+        private long diskForceBundlingMaxCoordinationWaitTimeMs = 0;
+        
 	public CachedRepository(
 			InMemoryRepository inMemoryCoordinatorLogEntryRepository,
 			Repository backupCoordinatorLogEntryRepository) {
@@ -47,6 +54,9 @@ public class CachedRepository  implements Repository {
 		ConfigProperties configProperties =	Configuration.getConfigProperties();
 		checkpointInterval = configProperties.getCheckpointInterval();
 		forgetOrphanedLogEntriesDelay = configProperties.getForgetOrphanedLogEntriesDelay();
+                
+                diskForceBundlingMaxCoordinationWaitTimeMs = Long.parseLong(configProperties.getProperty(DISK_FORCE_BUNDLING_MAX_COORDINATION_WAIT_TIME_MS, "0"));
+		LOGGER.logDebug("diskForceBundlingMaxCoordinationWaitTimeMs " + diskForceBundlingMaxCoordinationWaitTimeMs);
 		
 		try {
 			Collection<PendingTransactionRecord> coordinatorLogEntries = backupCoordinatorLogEntryRepository.getAllCoordinatorLogEntries();
@@ -63,19 +73,39 @@ public class CachedRepository  implements Repository {
 	}
 
 	@Override
-	public synchronized void put(String id, PendingTransactionRecord coordinatorLogEntry)
+	public CountDownLatch put(String id, PendingTransactionRecord coordinatorLogEntry)
 			throws IllegalArgumentException, LogWriteException {
 		
 		try {
+                    CountDownLatch cdl;
+                    synchronized (this) {
 			if(needsCheckpoint()){
 				performCheckpoint();
 			}
-			backupCoordinatorLogEntryRepository.put(id, coordinatorLogEntry);
+			cdl = backupCoordinatorLogEntryRepository.put(id, coordinatorLogEntry);
 			inMemoryCoordinatorLogEntryRepository.put(id, coordinatorLogEntry);
 			numberOfPutsSinceLastCheckpoint++;
+                    }
+                    // If there is a latch returned, we are running in disk-force-bundling mode, so wait for the disk-force-bundling thread
+                    // to signal disk-force has occured. The waiting is done outside of the synchronized block, otherwise no bundling would be
+                    // possible in the first place.
+                    if (cdl != null) {
+                        if (diskForceBundlingMaxCoordinationWaitTimeMs > 0) {
+                            boolean completed = cdl.await(diskForceBundlingMaxCoordinationWaitTimeMs, TimeUnit.MILLISECONDS);
+                            if (!completed) {
+                                LOGGER.logWarning("Disk force coordination time expired without completion for " + id + ", throwing exception. Another try will be done via checkpoint mechanism.");
+                                throw new IllegalStateException("Disk force coordination time expired without completion for " + id + ", throwing exception. Another try will be done via checkpoint mechanism.");
+                            }
+                        }
+                        else {
+                            cdl.await();
+                        }
+                    }
 		} catch (Exception e) {
-			performCheckpoint();
+                    LOGGER.logDebug("Issue occurred during write put, trying checkpoint.", e);
+                    performCheckpoint();
 		}
+                return null;
 	}
 
 	private synchronized void performCheckpoint() throws LogWriteException {

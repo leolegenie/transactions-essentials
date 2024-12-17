@@ -13,6 +13,7 @@ import java.util.HashSet;
 import java.util.Map;
 import java.util.Set;
 import java.util.concurrent.ConcurrentHashMap;
+import java.util.concurrent.CountDownLatch;
 
 import com.atomikos.recovery.PendingTransactionRecord;
 import com.atomikos.recovery.TxState;
@@ -30,7 +31,7 @@ private  Map<String, PendingTransactionRecord> storage = new ConcurrentHashMap<S
 
 
 	@Override
-	public synchronized void put(String id, PendingTransactionRecord coordinatorLogEntry)
+	public synchronized CountDownLatch put(String id, PendingTransactionRecord coordinatorLogEntry)
 			throws IllegalArgumentException {
 		PendingTransactionRecord existing = storage.get(id);
 		if (existing != null && existing == coordinatorLogEntry) {
@@ -41,6 +42,7 @@ private  Map<String, PendingTransactionRecord> storage = new ConcurrentHashMap<S
 		} else {
 			storage.put(id, coordinatorLogEntry);	
 		}
+                return null;
 	}
 
 	@Override
